@@ -55,7 +55,7 @@ public class AuthService(
         return new AuthResponse(access, refresh);
     }
 
-    public Task LogoutAsync(string userId)
+    public Task LogoutAsync(Guid userId)
     {
         return refreshTokenStore.RevokeAsync(userId);
     }

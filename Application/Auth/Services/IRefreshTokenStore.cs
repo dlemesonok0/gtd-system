@@ -4,5 +4,5 @@ public interface IRefreshTokenStore
 {
     Task<string> IssueAsync(Guid userId);
     Task<Guid?> ValidateAndRotateAsync(string refreshToken);
-    Task RevokeAsync(string userId);
+    Task RevokeAsync(Guid userId);
 }
