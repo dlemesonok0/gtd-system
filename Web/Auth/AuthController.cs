@@ -49,8 +49,8 @@ public class AuthController(AuthService service) : ControllerBase
     [Authorize]
     public async Task<IActionResult> MeAsync()
     {
-        var userId =  User.FindFirstValue("sub");
-        var email = User.FindFirstValue("email");
+        var userId =  User.FindFirstValue(ClaimTypes.NameIdentifier);
+        var email = User.FindFirstValue(ClaimTypes.Email);
 
         return Ok(new { userId, email });
     }
