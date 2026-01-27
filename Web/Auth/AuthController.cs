@@ -125,7 +125,7 @@ public class AuthController(IAuthService service) : ControllerBase
                     HttpOnly = true,
                     SameSite = SameSiteMode.Lax,
                     Secure = false,
-                    Path = "/api/auth/refresh"
+                    Path = "/"
                 });
         }
     }
@@ -134,7 +134,7 @@ public class AuthController(IAuthService service) : ControllerBase
     {
         Response.Cookies.Delete("refresh_token", new CookieOptions
         {
-            Path = "/api/auth/refresh"
+            Path = "/"
         });
     }
 }
