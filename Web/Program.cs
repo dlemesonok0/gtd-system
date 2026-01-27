@@ -85,6 +85,18 @@ builder.Services.AddOpenApi("v1", options =>
     });
 });
 
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowFrontend", policy =>
+    {
+        policy
+            .WithOrigins("http://88.218.67.107:8080")
+            .AllowCredentials()
+            .AllowAnyHeader()
+            .AllowAnyMethod();
+    });
+});
+
 var app = builder.Build();
 
 using (var scope = app.Services.CreateScope())
@@ -96,6 +108,7 @@ using (var scope = app.Services.CreateScope())
 app.MapOpenApi();
 
 app.UseCookiePolicy();
+app.UseCors();
 
 app.UseAuthentication();
 app.UseAuthorization();
