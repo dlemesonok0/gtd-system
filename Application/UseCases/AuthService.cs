@@ -1,18 +1,28 @@
+using Application.Auth;
+using Application.Auth.Dtos;
+using Application.Shared;
 using Domain.Auth;
 
-namespace gtd_system.UseCases;
+namespace Application.UseCases;
 
 public class AuthService(
     IUserRepository userRepository,
     IPasswordHasher passwordHasher,
     IJwtTokenService jwtTokenService,
-    IRefreshTokenStore refreshTokenStore)
+    IRefreshTokenStore refreshTokenStore) : IAuthService
 {
-    public async Task<AuthResponse> RegisterAsync(RegisterRequest reg)
+    public async Task<Result<AuthResponse, AuthError>> RegisterAsync(RegisterRequest reg)
     {
         var email = reg.Email.Trim();
         if (await userRepository.FindByEmailAsync(email) != null)
-            throw new Exception("Email already exists");
+            return Result<AuthResponse, AuthError>.Failure(new AuthError(AuthErrorCode.EmailAlreadyInUse,
+                "The email already exists."));
+
+        if (reg.Password.Length < 8)
+        {
+            return Result<AuthResponse, AuthError>.Failure(new AuthError(AuthErrorCode.PasswordTooShort,
+                "Need password longer than 7 characters."));
+        }
 
         var user = new ApplicationUser
         {
@@ -26,33 +36,42 @@ public class AuthService(
         var refresh = await refreshTokenStore.IssueAsync(user.Id);
 
 
-        return new AuthResponse(access, refresh);
+        return Result<AuthResponse, AuthError>.Success(new AuthResponse(access, refresh));
     }
 
-    public async Task<AuthResponse> LoginAsync(LoginRequest login)
+    public async Task<Result<AuthResponse, AuthError>> LoginAsync(LoginRequest login)
     {
         var user = await userRepository.FindByEmailAsync(login.Email);
-        if (user == null)
-            throw new Exception("User not found");
-
-        if (!passwordHasher.Verify(user.PasswordHash, login.Password))
-            throw new Exception("Wrong password");
+        if (user == null || !passwordHasher.Verify(user.PasswordHash, login.Password))
+            return Result<AuthResponse, AuthError>.Failure(new AuthError(AuthErrorCode.InvalidCredentials,
+                "Check credentials."));
 
         var access = jwtTokenService.CreateAccessToken(user);
         var refresh = await refreshTokenStore.IssueAsync(user.Id);
-        return new AuthResponse(access, refresh);
+        return Result<AuthResponse, AuthError>.Success(new AuthResponse(access, refresh));
     }
 
-    public async Task<AuthResponse> RefreshAsync(string refreshToken)
+    public async Task<Result<AuthResponse, AuthError>> RefreshAsync(string refreshToken)
     {
-        var userId = await refreshTokenStore.ValidateAndRotateAsync(refreshToken)
-                     ?? throw new Exception("Refresh token could not be rotated");
+        var userId = await refreshTokenStore.ValidateAndRotateAsync(refreshToken);
 
-        var user = await userRepository.FindByIdAsync(userId) ?? throw new Exception("User not found");
-        
+        if (userId is null)
+            return Result<AuthResponse, AuthError>.Failure(new AuthError(AuthErrorCode.InvalidCredentials,
+                "This refresh token is invalid."));
+
+        var id = userId.Value;
+
+        var user = await userRepository.FindByIdAsync(id);
+
+        if (user is null)
+        {
+            return Result<AuthResponse, AuthError>.Failure(new AuthError(AuthErrorCode.InvalidCredentials,
+                "This refresh token is invalid."));
+        }
+
         var access = jwtTokenService.CreateAccessToken(user);
         var refresh = await refreshTokenStore.IssueAsync(user.Id);
-        return new AuthResponse(access, refresh);
+        return Result<AuthResponse, AuthError>.Success(new AuthResponse(access, refresh));
     }
 
     public Task LogoutAsync(Guid userId)

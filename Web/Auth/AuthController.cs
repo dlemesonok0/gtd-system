@@ -1,8 +1,7 @@
 using System.Security.Claims;
-using Domain.Auth;
-using gtd_system.UseCases;
+using Application.Auth;
+using Application.UseCases;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Identity.Data;
 using Microsoft.AspNetCore.Mvc;
 using LoginRequest = Domain.Auth.LoginRequest;
 using RegisterRequest = Domain.Auth.RegisterRequest;
@@ -11,85 +10,131 @@ namespace Web.Auth;
 
 [ApiController]
 [Route("api/[controller]")]
-public class AuthController(AuthService service) : ControllerBase
+public class AuthController(IAuthService service) : ControllerBase
 {
-    [HttpPost]
-    [Route("/register")]
-    public async Task<AuthResponse> RegisterAsync(RegisterRequest reg)
+    [HttpPost("register")]
+    public async Task<ActionResult<AuthApiResponse>> RegisterAsync([FromBody] RegisterRequest reg)
     {
-        return await service.RegisterAsync(reg);
+        var res = await service.RegisterAsync(reg);
+
+        if (!res.IsSuccess || res.Value is null)
+        {
+            if (res.Error is not null && res.Error.ErrorCode == AuthErrorCode.EmailAlreadyInUse ||
+                res.Error is not null && res.Error.ErrorCode == AuthErrorCode.PasswordTooShort)
+            {
+                return Conflict(new ProblemDetails { Title = res.Error.Message });
+            }
+
+            return BadRequest();
+        }
+
+        SetRefreshCookie(res.Value.RefreshToken);
+
+        return Ok(new AuthApiResponse(res.Value.AccessToken));
     }
 
-    [HttpPost]
-    [Route("/login")]
-    public async Task<IActionResult> LoginAsync(LoginRequest login)
+    [HttpPost("login")]
+    public async Task<ActionResult<AuthApiResponse>> LoginAsync([FromBody] LoginRequest login)
     {
         var res = await service.LoginAsync(login);
-        
-        Response.Cookies.Append(
-            "refresh_token", 
-            res.RefreshToken,
-            new CookieOptions
+
+        if (!res.IsSuccess || res.Value is null)
+        {
+            if (res.Error is not null && res.Error.ErrorCode == AuthErrorCode.InvalidCredentials)
             {
-                HttpOnly = true,
-                SameSite = SameSiteMode.Lax,
-                Secure = false,
-                Path = "auth/refresh"
-            });
-        
-        return Ok(res.AccessToken);
+                return Unauthorized(new ProblemDetails { Title = res.Error.Message });
+            }
+
+            return BadRequest();
+        }
+
+        SetRefreshCookie(res.Value.RefreshToken);
+
+        return Ok(new AuthApiResponse(res.Value.AccessToken));
     }
 
-    [HttpPost]
-    [Route("/refresh")]
-    public async Task<IActionResult> RefreshAsync(HttpContext ctx, string refresh)
+    [HttpPost("refresh")]
+    public async Task<ActionResult<AuthApiResponse>> RefreshAsync()
     {
-        if (!ctx.Request.Cookies.TryGetValue("refresh_token", out var token) || !string.IsNullOrWhiteSpace(token))
+        if (Request.Cookies.TryGetValue("refresh_token", out var token) || string.IsNullOrWhiteSpace(token))
         {
             return Unauthorized();
         }
 
-        var res = await service.RefreshAsync(refresh);
+        var res = await service.RefreshAsync(token);
 
-        if (!string.IsNullOrWhiteSpace(res.RefreshToken))
+        if (!res.IsSuccess || res.Value is null)
+        {
+            if (res.Error is not null && res.Error.ErrorCode == AuthErrorCode.RefreshTokenCantRotated)
+            {
+                return Unauthorized(new ProblemDetails { Title = res.Error.Message });
+            }
+
+            return BadRequest();
+        }
+
+        SetRefreshCookie(res.Value.RefreshToken);
+
+        return Ok(new AuthApiResponse(res.Value.AccessToken));
+    }
+
+
+    [HttpPost("logout")]
+    [Authorize]
+    public async Task<IActionResult> LogoutAsync()
+    {
+        try
+        {
+            await service.LogoutAsync(Guid.Parse((User.FindFirstValue("sub") ??
+                                                  User.FindFirstValue(ClaimTypes.NameIdentifier))!));
+        }
+        catch
+        {
+            return BadRequest();
+        }
+
+        DeleteRefreshToken();
+
+        return Ok();
+    }
+
+    [HttpGet("me")]
+    [Authorize]
+    public async Task<ActionResult<MeResponse>> MeAsync()
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        var email = User.FindFirstValue(ClaimTypes.Email);
+
+        if (userId is null || email is null)
+        {
+            return Unauthorized();
+        }
+
+        return Ok(new MeResponse( Guid.Parse(userId), email ));
+    }
+
+    private void SetRefreshCookie(string token)
+    {
+        if (!string.IsNullOrWhiteSpace(token))
         {
             Response.Cookies.Append(
-                "refresh_token", 
-                res.RefreshToken,
+                "refresh_token",
+                token,
                 new CookieOptions
                 {
                     HttpOnly = true,
                     SameSite = SameSiteMode.Lax,
                     Secure = false,
-                    Path = "auth/refresh"
+                    Path = "/api/auth/refresh"
                 });
         }
-        
-        return Ok(res.AccessToken);
     }
 
-    
-    [HttpGet]
-    [Route("/logout")]
-    [Authorize]
-    public async Task<IActionResult> LogoutAsync(HttpContext ctx)
+    private void DeleteRefreshToken()
     {
-        await service.LogoutAsync(Guid.Parse((User.FindFirstValue("sub") ?? User.FindFirstValue(ClaimTypes.NameIdentifier))!));
-        ctx.Response.Cookies.Delete("refresh_token", new CookieOptions
+        Response.Cookies.Delete("refresh_token", new CookieOptions
         {
-            Path = "auth/refresh"
+            Path = "/api/auth/refresh"
         });
-        return Ok();
-    }
-
-    [HttpGet]
-    [Route("/me")]
-    [Authorize]
-    public async Task<IActionResult> MeAsync()
-    {
-        var userId =  User.FindFirstValue(ClaimTypes.NameIdentifier);
-        var email = User.FindFirstValue(ClaimTypes.Email);
-
-        return Ok(new { userId, email });
     }
 }

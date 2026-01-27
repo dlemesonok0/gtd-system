@@ -1,3 +1,3 @@
 namespace Domain.Auth;
 
-public sealed record AuthResponse(string AccessToken, string RefreshToken);
+public record AuthResponse(string AccessToken, string RefreshToken);

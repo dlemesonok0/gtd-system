@@ -1,6 +1,6 @@
 using System.Text;
+using Application.UseCases;
 using Domain.Auth;
-using gtd_system.UseCases;
 using Infrastructure.Data;
 using Infrastructure.Entities;
 using Infrastructure.Helpers;
@@ -24,7 +24,7 @@ builder.Services.AddScoped<IUserRepository, EfUserRepository>();
 builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
 builder.Services.AddScoped<IPasswordHasher, PasswordHasher>();
 builder.Services.AddScoped<IRefreshTokenStore, EfRefreshTokenStore>();
-builder.Services.AddScoped<AuthService>();
+builder.Services.AddScoped<IAuthService, AuthService>();
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(o =>
 {
@@ -42,6 +42,11 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJw
 });
 
 builder.Services.AddAuthorization();
+
+builder.Services.Configure<CookiePolicyOptions>(options =>
+{
+    options.MinimumSameSitePolicy = SameSiteMode.None;
+});
 
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
@@ -89,6 +94,8 @@ using (var scope = app.Services.CreateScope())
 }
 
 app.MapOpenApi();
+
+app.UseCookiePolicy();
 
 app.UseAuthentication();
 app.UseAuthorization();
