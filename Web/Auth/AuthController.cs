@@ -22,25 +22,63 @@ public class AuthController(AuthService service) : ControllerBase
 
     [HttpPost]
     [Route("/login")]
-    public async Task<AuthResponse> LoginAsync(LoginRequest login)
+    public async Task<IActionResult> LoginAsync(LoginRequest login)
     {
-        return await service.LoginAsync(login);
+        var res = await service.LoginAsync(login);
+        
+        Response.Cookies.Append(
+            "refresh_token", 
+            res.RefreshToken,
+            new CookieOptions
+            {
+                HttpOnly = true,
+                SameSite = SameSiteMode.Lax,
+                Secure = false,
+                Path = "auth/refresh"
+            });
+        
+        return Ok(res.AccessToken);
     }
 
     [HttpPost]
     [Route("/refresh")]
-    public async Task<AuthResponse> RefreshAsync(string refresh)
+    public async Task<IActionResult> RefreshAsync(HttpContext ctx, string refresh)
     {
-        return await service.RefreshAsync(refresh);
+        if (!ctx.Request.Cookies.TryGetValue("refresh_token", out var token) || !string.IsNullOrWhiteSpace(token))
+        {
+            return Unauthorized();
+        }
+
+        var res = await service.RefreshAsync(refresh);
+
+        if (!string.IsNullOrWhiteSpace(res.RefreshToken))
+        {
+            Response.Cookies.Append(
+                "refresh_token", 
+                res.RefreshToken,
+                new CookieOptions
+                {
+                    HttpOnly = true,
+                    SameSite = SameSiteMode.Lax,
+                    Secure = false,
+                    Path = "auth/refresh"
+                });
+        }
+        
+        return Ok(res.AccessToken);
     }
 
     
     [HttpGet]
     [Route("/logout")]
     [Authorize]
-    public async Task<IActionResult> LogoutAsync()
+    public async Task<IActionResult> LogoutAsync(HttpContext ctx)
     {
         await service.LogoutAsync(Guid.Parse((User.FindFirstValue("sub") ?? User.FindFirstValue(ClaimTypes.NameIdentifier))!));
+        ctx.Response.Cookies.Delete("refresh_token", new CookieOptions
+        {
+            Path = "auth/refresh"
+        });
         return Ok();
     }
 
