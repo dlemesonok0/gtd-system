@@ -56,7 +56,7 @@ public class AuthController(IAuthService service) : ControllerBase
     [HttpPost("refresh")]
     public async Task<ActionResult<AuthApiResponse>> RefreshAsync()
     {
-        if (Request.Cookies.TryGetValue("refresh_token", out var token) || string.IsNullOrWhiteSpace(token))
+        if (!Request.Cookies.TryGetValue("refresh_token", out var token) || string.IsNullOrWhiteSpace(token))
         {
             return Unauthorized();
         }
